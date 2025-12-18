@@ -203,6 +203,8 @@ def _pick_primary_video(stored_paths: list[str]) -> str | None:
 class ComfyHeadless:
     @modal.enter()
     def enter(self) -> None:
+        # Keep @enter lightweight so idle/bot traffic doesn't spin up ComfyUI.
+        # We start ComfyUI lazily only when a workflow is executed.
         def ensure_symlink(target: Path, source: Path) -> None:
             source.mkdir(parents=True, exist_ok=True)
             if target.is_symlink():
@@ -234,6 +236,16 @@ class ComfyHeadless:
             encoding="utf-8",
         )
 
+    def _ensure_comfy_running(self) -> None:
+        import httpx
+
+        try:
+            r = httpx.get(f"http://127.0.0.1:{COMFY_PORT}/api/system_stats", timeout=2)
+            if r.status_code == 200:
+                return
+        except Exception:
+            pass
+
         subprocess.Popen(
             [
                 "python",
@@ -248,12 +260,20 @@ class ComfyHeadless:
         )
         _wait_for_comfy()
 
-    @modal.web_server(COMFY_PORT, startup_timeout=300)
-    def comfy_api(self):
-        pass
-
     @modal.fastapi_endpoint(method="POST")
-    def run(self, body: dict[str, Any]) -> dict[str, Any]:
+    def run(self, body: dict[str, Any], request: "Request") -> dict[str, Any]:
+        # Optional auth guard to prevent random internet traffic from triggering work.
+        # Set COMFY_RUN_TOKEN in Modal as a secret/env var, and send:
+        #   Authorization: Bearer <token>
+        from fastapi import HTTPException, Request
+        token = os.environ.get("COMFY_RUN_TOKEN", "").strip()
+        if token:
+            auth = ""
+            if request is not None:
+                auth = request.headers.get("authorization", "")
+            if auth != f"Bearer {token}":
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
         user_id = str(body.get("user_id", "")).strip()
         ollama_url = str(body.get("ollama_url", "")).strip()
         workflow_json = body.get("workflow_json")
@@ -270,6 +290,8 @@ class ComfyHeadless:
         injected = _inject_ollama_url(workflow_json, ollama_url)
         if injected == 0:
             raise ValueError("No OllamaConnectivity node found in workflow_json")
+
+        self._ensure_comfy_running()
 
         prompt_id = _submit_workflow(workflow_json)
         history_item = _wait_for_history(prompt_id, timeout_s=60 * 60)
@@ -293,4 +315,3 @@ class ComfyHeadless:
             "result_path": primary,
             "stored_paths": stored_paths,
         }
-

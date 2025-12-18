@@ -24,10 +24,20 @@ Deploy:
 py -m modal deploy modal_comfyui_headless.py
 ```
 
-Modal will print two URLs:
+Modal will print the SaaS endpoint URL:
 - `...-run.modal.run` (your SaaS endpoint)
 
 Tip: keep the endpoint private and set `COMFY_RUN_TOKEN` in Modal, then send `Authorization: Bearer <token>`.
+
+## Optional: open ComfyUI in the browser (workflow editing)
+
+When you need to build/edit workflows interactively, deploy the UI app:
+
+```bash
+py -m modal deploy modal_comfyui_ui.py
+```
+
+Important: If you leave the UI tab open, it will keep a WebSocket connection and the container may stay up (costing money). Close the tab to allow Modal to scale down to zero.
 
 ## SaaS endpoint request
 

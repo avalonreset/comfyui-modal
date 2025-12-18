@@ -269,13 +269,41 @@ def web():
         encoding="utf-8",
     )
 
-    _start_comfyui()
-    _wait_for_comfy(timeout_s=300)
-
     app_api = FastAPI()
     run_lock = asyncio.Lock()
+    comfy_ready = asyncio.Event()
+
+    async def ensure_comfy_ready(timeout_s: int = 600) -> None:
+        if comfy_ready.is_set():
+            return
+
+        def is_ready() -> bool:
+            try:
+                r = httpx.get(
+                    f"http://127.0.0.1:{COMFY_INTERNAL_PORT}/api/system_stats", timeout=2
+                )
+                return r.status_code == 200
+            except Exception:
+                return False
+
+        if not is_ready():
+            _start_comfyui()
+
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            if is_ready():
+                comfy_ready.set()
+                return
+            await asyncio.sleep(1)
+        raise RuntimeError("ComfyUI did not become ready in time")
+
+    @app_api.on_event("startup")
+    async def _startup() -> None:
+        # Start ComfyUI in the background so /health responds quickly during cold starts.
+        asyncio.create_task(ensure_comfy_ready(timeout_s=600))
 
     async def proxy_http(req: Request, full_path: str) -> Response:
+        await ensure_comfy_ready(timeout_s=600)
         method = req.method.upper()
         url = httpx.URL(f"http://127.0.0.1:{COMFY_INTERNAL_PORT}/{full_path}").copy_with(
             query=req.url.query.encode("utf-8")
@@ -298,10 +326,11 @@ def web():
 
     @app_api.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok" if comfy_ready.is_set() else "starting"}
 
     @app_api.post("/run")
     async def run(body: dict[str, Any], request: Request) -> dict[str, Any]:
+        await ensure_comfy_ready(timeout_s=600)
         token = os.environ.get("COMFY_RUN_TOKEN", "").strip()
         if token:
             auth = request.headers.get("authorization", "")

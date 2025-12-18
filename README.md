@@ -1,16 +1,21 @@
-# ComfyUI on Modal (Headless + Ollama)
+# ComfyUI on Modal (UI + Headless + Ollama)
 
-This repo deploys a **CPU-only**, **headless** ComfyUI service on Modal for multi-user SaaS use cases.
+This repo deploys **CPU-only** ComfyUI on Modal for multi-user SaaS use cases.
+
+You can run:
+- **UI mode** (browser) to build/test workflows
+- **Headless mode** (API) to execute workflows for users
 
 ## What you get
 
-- A SaaS endpoint that accepts `{ user_id, ollama_url, workflow_json }`
+- A headless SaaS endpoint that accepts `{ user_id, ollama_url, workflow_json }`
   - Injects `ollama_url` into `OllamaConnectivity*` nodes (from `stavsap/comfyui-ollama`)
   - Runs the workflow via ComfyUI `/prompt` + `/history`
   - Copies outputs into a persistent Modal `Volume` mounted at `/results`
   - Returns `result_path` + `stored_paths`
 - Persistent volumes for models and ComfyUI user state (mounted under `/persist/*` and symlinked into ComfyUI)
  - ComfyUI is started lazily (only when `run` is called) to minimize idle cost.
+ - Optional browser UI for workflow creation/testing
 
 ## Deploy
 
@@ -18,26 +23,28 @@ Prereqs:
 - Python installed locally
 - Modal CLI set up (`py -m pip install modal` then `py -m modal setup`)
 
-Deploy:
+Deploy the unified app (recommended):
 
 ```bash
-py -m modal deploy modal_comfyui_headless.py
+py -m modal deploy modal_comfyui.py
 ```
 
-Modal will print the SaaS endpoint URL:
-- `...-run.modal.run` (your SaaS endpoint)
+Modal prints two endpoints:
+- `...-ui.modal.run` (ComfyUI browser UI)
+- `...-run.modal.run` (your SaaS runner endpoint)
 
 Tip: keep the endpoint private and set `COMFY_RUN_TOKEN` in Modal, then send `Authorization: Bearer <token>`.
 
-## Optional: open ComfyUI in the browser (workflow editing)
+## Cost note (important)
 
-When you need to build/edit workflows interactively, deploy the UI app:
+If you leave the UI tab open, it keeps a WebSocket connection and the container may stay up (cost money).
+Close the tab when you’re done. To force it down immediately:
 
 ```bash
-py -m modal deploy modal_comfyui_ui.py
+py -m modal app stop comfyui
 ```
 
-Important: If you leave the UI tab open, it will keep a WebSocket connection and the container may stay up (costing money). Close the tab to allow Modal to scale down to zero.
+This app is CPU-only: we never request GPU resources and ComfyUI starts with `--cpu`.
 
 ## SaaS endpoint request
 
@@ -54,3 +61,9 @@ POST JSON:
 Response includes:
 - `result_path`: a path under the `/results` volume like `user_123/<job_id>/output.mp4`
 - `stored_paths`: all output files copied to the volume
+
+## Legacy (older deployments)
+
+If you previously deployed these, they still work but are no longer recommended:
+- `modal_comfyui_headless.py` (app: `comfyui-headless`)
+- `modal_comfyui_ui.py` (app: `comfyui-ui`)

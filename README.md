@@ -29,9 +29,8 @@ Deploy the unified app (recommended):
 py -m modal deploy modal_comfyui.py
 ```
 
-Modal prints two endpoints:
-- `...-ui.modal.run` (ComfyUI browser UI)
-- `...-run.modal.run` (your SaaS runner endpoint)
+Modal prints one endpoint:
+- `...-web.modal.run` (ComfyUI UI + your SaaS runner on the same domain)
 
 Tip: keep the endpoint private and set `COMFY_RUN_TOKEN` in Modal, then send `Authorization: Bearer <token>`.
 
@@ -61,6 +60,9 @@ POST JSON:
 Response includes:
 - `result_path`: a path under the `/results` volume like `user_123/<job_id>/output.mp4`
 - `stored_paths`: all output files copied to the volume
+
+POST to the same domain at `/run`:
+- `https://<your-modal-web-endpoint>/run`
 
 ## Legacy (older deployments)
 
